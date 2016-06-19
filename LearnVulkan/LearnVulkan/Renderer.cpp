@@ -1,11 +1,12 @@
 #include "Renderer.h"
-#include <vector>
 #include <iostream>
 
 
 Renderer::Renderer()
 {
+	SetupDebug();
 	InitInstance();
+	InitDebug();
 	InitDevice();
 }
 
@@ -13,10 +14,11 @@ Renderer::Renderer()
 Renderer::~Renderer()
 {
 	DeleteDevice();
+	DeleteDebug();
 	DeleteInstance();
 }
 
-bool Renderer::InitInstance()
+void Renderer::InitInstance()
 {
 	// Welcome to Vulkan descriptor galore!
 	VkApplicationInfo ApplicationInfo{};
@@ -28,13 +30,16 @@ bool Renderer::InitInstance()
 	VkInstanceCreateInfo InstanceCreateInfo{};
 	InstanceCreateInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 	InstanceCreateInfo.pApplicationInfo = &ApplicationInfo;
+	InstanceCreateInfo.enabledLayerCount = InstanceLayers.size();
+	InstanceCreateInfo.ppEnabledLayerNames = InstanceLayers.data();
+	InstanceCreateInfo.enabledExtensionCount = InstanceExtensions.size();
+	InstanceCreateInfo.ppEnabledExtensionNames = InstanceExtensions.data();
 
 	auto error = vkCreateInstance(&InstanceCreateInfo, nullptr, &Instance);
 
 	if (error != VK_SUCCESS)
-		return false;
+		std::exit(-1); // Could not create instance.
 
-	return true;
 }
 
 void Renderer::DeleteInstance()
@@ -43,7 +48,7 @@ void Renderer::DeleteInstance()
 	Instance = nullptr;
 }
 
-bool Renderer::InitDevice()
+void Renderer::InitDevice()
 {
 	uint32_t PhysicalDeviceCount = 0;
 	vkEnumeratePhysicalDevices(Instance, &PhysicalDeviceCount, nullptr);
@@ -51,7 +56,6 @@ bool Renderer::InitDevice()
 	vkEnumeratePhysicalDevices(Instance, &PhysicalDeviceCount, PhysicalDevices.data());
 
 	PhysicalDevice = PhysicalDevices[0];
-
 
 	uint32_t PhysicalDeviceQueueFamilyCount = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties(PhysicalDevice, &PhysicalDeviceQueueFamilyCount, nullptr);
@@ -69,7 +73,7 @@ bool Renderer::InitDevice()
 	}
 
 	if (bFoundGraphicsFamily == false)
-		return false;
+		std::exit(-1); // Could not find graphics family.
 
 	//
 	uint32_t LayerCount = 0;
@@ -94,17 +98,73 @@ bool Renderer::InitDevice()
 	DeviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 	DeviceCreateInfo.queueCreateInfoCount = 1;
 	DeviceCreateInfo.pQueueCreateInfos = &DeviceQueueCreateInfo;
+	DeviceCreateInfo.enabledExtensionCount = DeviceExtensions.size();
+	DeviceCreateInfo.ppEnabledExtensionNames = DeviceExtensions.data();
 
 	auto error = vkCreateDevice(PhysicalDevice, &DeviceCreateInfo, nullptr, &Device);
 
 	if (error != VK_SUCCESS)
-		return false;
+		std::exit(-1); // Could not create device.
 
-	return true;
 }
 
 void Renderer::DeleteDevice()
 {
 	vkDestroyDevice(Device, nullptr);
 	Device = nullptr;
+}
+
+VKAPI_ATTR VkBool32 VKAPI_CALL
+VulkanDebugReportCallBack(
+	VkDebugReportFlagsEXT flags,
+	VkDebugReportObjectTypeEXT objType,
+	uint64_t srcObject,
+	size_t location,
+	int32_t msgCode,
+	const char* pLayerPrefix,
+	const char* pMsg,
+	void* pUserData)
+{
+	std::cout << pMsg << std::endl;
+	return false;
+}
+
+
+
+void Renderer::SetupDebug()
+{
+	InstanceLayers.push_back("VK_LAYER_LUNARG_standard_validation");
+	InstanceExtensions.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
+}
+
+PFN_vkCreateDebugReportCallbackEXT fvkCreateDebugReportCallbackEXT = nullptr;
+PFN_vkDestroyDebugReportCallbackEXT fvkDestroyDebugReportCallbackEXT = nullptr;
+
+void Renderer::InitDebug()
+{
+	fvkCreateDebugReportCallbackEXT = (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(Instance, "vkCreateDebugReportCallbackEXT");
+	fvkDestroyDebugReportCallbackEXT = (PFN_vkDestroyDebugReportCallbackEXT)vkGetInstanceProcAddr(Instance, "vkDestroyDebugReportCallbackEXT");
+
+	if (fvkCreateDebugReportCallbackEXT == nullptr || fvkDestroyDebugReportCallbackEXT == nullptr)
+	{
+		// Could not fetch function pointers.
+		std::exit(-1);
+	}
+	VkDebugReportCallbackCreateInfoEXT DebugReportInfo{};
+	DebugReportInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
+	DebugReportInfo.flags = 
+		VK_DEBUG_REPORT_INFORMATION_BIT_EXT |
+		VK_DEBUG_REPORT_WARNING_BIT_EXT |
+		VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT |
+		VK_DEBUG_REPORT_ERROR_BIT_EXT |
+		VK_DEBUG_REPORT_DEBUG_BIT_EXT |
+		VK_DEBUG_REPORT_FLAG_BITS_MAX_ENUM_EXT |
+		0;
+	DebugReportInfo.pfnCallback = VulkanDebugReportCallBack;
+	fvkCreateDebugReportCallbackEXT(Instance, &DebugReportInfo, nullptr, &DebugReport);
+}
+
+void Renderer::DeleteDebug()
+{
+	fvkDestroyDebugReportCallbackEXT(Instance, DebugReport, nullptr);
 }
