@@ -1,5 +1,5 @@
 ﻿  Renderer.cpp
-c:\users\joseph despain\desktop\vulkan\learningvulkan\learnvulkan\learnvulkan\renderer.cpp(33): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
-c:\users\joseph despain\desktop\vulkan\learningvulkan\learnvulkan\learnvulkan\renderer.cpp(35): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
-c:\users\joseph despain\desktop\vulkan\learningvulkan\learnvulkan\learnvulkan\renderer.cpp(101): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
+c:\users\joseph despain\desktop\vulkan\learningvulkan\learnvulkan\learnvulkan\renderer.cpp(36): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
+c:\users\joseph despain\desktop\vulkan\learningvulkan\learnvulkan\learnvulkan\renderer.cpp(38): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
+c:\users\joseph despain\desktop\vulkan\learningvulkan\learnvulkan\learnvulkan\renderer.cpp(105): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
   LearnVulkan.vcxproj -> C:\Users\Joseph Despain\Desktop\Vulkan\LearningVulkan\LearnVulkan\x64\Debug\LearnVulkan.exe

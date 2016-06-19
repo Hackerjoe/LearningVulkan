@@ -27,7 +27,7 @@ public:
 	VkDevice Device = nullptr;
 	// VkPhysicalDevice is the GPU.
 	VkPhysicalDevice PhysicalDevice = nullptr;
-
+	VkDebugReportCallbackCreateInfoEXT DebugReportInfo = {};
 	VkDebugReportCallbackEXT DebugReport = nullptr;
 
 	uint32_t GraphicsFamilyIndex = 0;

@@ -1,6 +1,9 @@
 #include "Renderer.h"
 #include <iostream>
-
+#include <sstream>
+#ifdef _WIN32
+#include <Windows.h>
+#endif
 
 Renderer::Renderer()
 {
@@ -34,6 +37,7 @@ void Renderer::InitInstance()
 	InstanceCreateInfo.ppEnabledLayerNames = InstanceLayers.data();
 	InstanceCreateInfo.enabledExtensionCount = InstanceExtensions.size();
 	InstanceCreateInfo.ppEnabledExtensionNames = InstanceExtensions.data();
+	InstanceCreateInfo.pNext = &DebugReportInfo;
 
 	auto error = vkCreateInstance(&InstanceCreateInfo, nullptr, &Instance);
 
@@ -83,7 +87,7 @@ void Renderer::InitDevice()
 	std::cout << "[Supported Layer Properties]" << std::endl;
 	for (auto &i : LayerProperties)
 	{
-		std::cout << "  " << i.layerName << " || " << i.description << "  " << std::endl;
+		std::cout << "\t" << i.layerName << " || " << i.description << "  " << std::endl;
 	}
 	std::cout << "[END]" << std::endl;
 
@@ -125,7 +129,41 @@ VulkanDebugReportCallBack(
 	const char* pMsg,
 	void* pUserData)
 {
-	std::cout << pMsg << std::endl;
+	std::stringstream MessageStream;
+
+	MessageStream << "VKDEBUG: ";
+	switch (flags)
+	{
+	case VK_DEBUG_REPORT_INFORMATION_BIT_EXT:
+		MessageStream << "[INFO] ";
+		break;
+
+	case  VK_DEBUG_REPORT_WARNING_BIT_EXT:
+		MessageStream << "[WARNING] ";
+		break;
+
+	case VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT:
+		MessageStream << "[PERFORMANCE_WARN] ";
+		break;
+	case VK_DEBUG_REPORT_ERROR_BIT_EXT:
+		MessageStream << "[ERROR] ";
+		break;
+	case VK_DEBUG_REPORT_DEBUG_BIT_EXT:
+		MessageStream << "[REPORT] ";
+		break;
+	case VK_DEBUG_REPORT_FLAG_BITS_MAX_ENUM_EXT:
+		MessageStream << "[REPORT_FLAG] ";
+		break;
+	}
+	MessageStream << pLayerPrefix << " | " << pMsg << " ";
+	MessageStream << std::endl;
+	std::cout << MessageStream.str();
+
+	if (flags == VK_DEBUG_REPORT_ERROR_BIT_EXT)
+	{
+		MessageBox(NULL, (LPCWSTR)MessageStream.str().c_str() , L"Vulkan ERROR", 0);
+	}
+
 	return false;
 }
 
@@ -133,6 +171,17 @@ VulkanDebugReportCallBack(
 
 void Renderer::SetupDebug()
 {
+	DebugReportInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
+	DebugReportInfo.flags =
+		VK_DEBUG_REPORT_INFORMATION_BIT_EXT |
+		VK_DEBUG_REPORT_WARNING_BIT_EXT |
+		VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT |
+		VK_DEBUG_REPORT_ERROR_BIT_EXT |
+		VK_DEBUG_REPORT_DEBUG_BIT_EXT |
+		VK_DEBUG_REPORT_FLAG_BITS_MAX_ENUM_EXT |
+		0;
+	DebugReportInfo.pfnCallback = VulkanDebugReportCallBack;
+
 	InstanceLayers.push_back("VK_LAYER_LUNARG_standard_validation");
 	InstanceExtensions.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
 }
@@ -150,17 +199,7 @@ void Renderer::InitDebug()
 		// Could not fetch function pointers.
 		std::exit(-1);
 	}
-	VkDebugReportCallbackCreateInfoEXT DebugReportInfo{};
-	DebugReportInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
-	DebugReportInfo.flags = 
-		VK_DEBUG_REPORT_INFORMATION_BIT_EXT |
-		VK_DEBUG_REPORT_WARNING_BIT_EXT |
-		VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT |
-		VK_DEBUG_REPORT_ERROR_BIT_EXT |
-		VK_DEBUG_REPORT_DEBUG_BIT_EXT |
-		VK_DEBUG_REPORT_FLAG_BITS_MAX_ENUM_EXT |
-		0;
-	DebugReportInfo.pfnCallback = VulkanDebugReportCallBack;
+	
 	fvkCreateDebugReportCallbackEXT(Instance, &DebugReportInfo, nullptr, &DebugReport);
 }
 
