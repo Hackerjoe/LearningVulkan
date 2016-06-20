@@ -8,21 +8,26 @@
 Renderer::Renderer()
 {
 	SetupDebug();
+	InitGLFW();
 	InitInstance();
 	InitDebug();
 	InitDevice();
+	GLFWCreateSurface();
 }
 
 
 Renderer::~Renderer()
 {
+	GLFWDeleteSurface();
 	DeleteDevice();
 	DeleteDebug();
 	DeleteInstance();
+	DeleteGLFW();
 }
 
 void Renderer::InitInstance()
 {
+
 	// Welcome to Vulkan descriptor galore!
 	VkApplicationInfo ApplicationInfo{};
 	ApplicationInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -161,7 +166,9 @@ VulkanDebugReportCallBack(
 
 	if (flags == VK_DEBUG_REPORT_ERROR_BIT_EXT)
 	{
+#ifdef _WIN32
 		MessageBox(NULL, (LPCWSTR)MessageStream.str().c_str() , L"Vulkan ERROR", 0);
+#endif
 	}
 
 	return false;
@@ -206,4 +213,54 @@ void Renderer::InitDebug()
 void Renderer::DeleteDebug()
 {
 	fvkDestroyDebugReportCallbackEXT(Instance, DebugReport, nullptr);
+}
+
+void Renderer::InitGLFW()
+{
+	glfwInit();
+
+	// check for vulkan support
+	if (GLFW_FALSE == glfwVulkanSupported())
+	{
+		// not supported
+		glfwTerminate();
+		std::exit(-1);
+	}
+
+	uint32_t instance_extension_count = 0;
+	const char ** instance_extensions_buffer = glfwGetRequiredInstanceExtensions(&instance_extension_count);
+	for (uint32_t i = 0; i < instance_extension_count; ++i) {
+		// Push back required instance extensions as well
+		InstanceExtensions.push_back(instance_extensions_buffer[i]);
+	}
+}
+
+void Renderer::DeleteGLFW()
+{
+	glfwTerminate();
+}
+
+void Renderer::GLFWCreateSurface()
+{
+	int width = 800;
+	int height = 600;
+	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);		// This tells GLFW to not create an OpenGL context with the window
+	window = glfwCreateWindow(width, height,"Learn Vulkan", nullptr, nullptr);
+
+	// make sure we indeed get the surface size we want.
+	glfwGetFramebufferSize(window, &width, &height);
+
+
+	VkResult ret = glfwCreateWindowSurface(Instance, window, nullptr, &surface);
+	if (VK_SUCCESS != ret) {
+		// couldn't create surface, exit
+		glfwTerminate();
+		std::exit(-1);
+	}
+}
+
+void Renderer::GLFWDeleteSurface()
+{
+	vkDestroySurfaceKHR(Instance, surface, nullptr);
+	glfwDestroyWindow(window);
 }
