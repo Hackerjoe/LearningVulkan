@@ -1,7 +1,11 @@
 ﻿  Renderer.cpp
 c:\program files (x86)\windows kits\8.1\include\shared\minwindef.h(130): warning C4005: 'APIENTRY': macro redefinition
   c:\users\joseph despain\documents\glfw3vulkan\glfw-3.2\include\glfw\glfw3.h(98): note: see previous definition of 'APIENTRY'
-c:\users\joseph despain\desktop\vulkan\learningvulkan\learnvulkan\learnvulkan\renderer.cpp(41): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
-c:\users\joseph despain\desktop\vulkan\learningvulkan\learnvulkan\learnvulkan\renderer.cpp(43): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
-c:\users\joseph despain\desktop\vulkan\learningvulkan\learnvulkan\learnvulkan\renderer.cpp(110): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
+c:\users\joseph despain\desktop\vulkan\learningvulkan\learnvulkan\learnvulkan\renderer.cpp(49): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
+c:\users\joseph despain\desktop\vulkan\learningvulkan\learnvulkan\learnvulkan\renderer.cpp(51): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
+c:\users\joseph despain\desktop\vulkan\learningvulkan\learnvulkan\learnvulkan\renderer.cpp(118): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
+  Generating Code...
+  Compiling...
+  Main.cpp
+  Generating Code...
   LearnVulkan.vcxproj -> C:\Users\Joseph Despain\Desktop\Vulkan\LearningVulkan\LearnVulkan\x64\Debug\LearnVulkan.exe

@@ -13,11 +13,19 @@ Renderer::Renderer()
 	InitDebug();
 	InitDevice();
 	GLFWCreateSurface();
+	InitCommandPool();
+	InitCommandBuffer();
+	InitSwapchain();
+	InitSwapImages();
 }
 
 
 Renderer::~Renderer()
 {
+	DeleteSwapImages();
+	DeleteSwapchain();
+	DeleteCommandBuffer();
+	DeleteCommandPool();
 	GLFWDeleteSurface();
 	DeleteDevice();
 	DeleteDebug();
@@ -115,6 +123,8 @@ void Renderer::InitDevice()
 	if (error != VK_SUCCESS)
 		std::exit(-1); // Could not create device.
 
+	vkGetDeviceQueue(Device, GraphicsFamilyIndex, 0, &Queue);
+
 }
 
 void Renderer::DeleteDevice()
@@ -167,7 +177,7 @@ VulkanDebugReportCallBack(
 	if (flags == VK_DEBUG_REPORT_ERROR_BIT_EXT)
 	{
 #ifdef _WIN32
-		MessageBox(NULL, (LPCWSTR)MessageStream.str().c_str() , L"Vulkan ERROR", 0);
+		MessageBox(NULL, L"ERROR Check Log", L"Vulkan ERROR", 0);
 #endif
 	}
 
@@ -206,7 +216,7 @@ void Renderer::InitDebug()
 		// Could not fetch function pointers.
 		std::exit(-1);
 	}
-	
+
 	fvkCreateDebugReportCallbackEXT(Instance, &DebugReportInfo, nullptr, &DebugReport);
 }
 
@@ -227,12 +237,16 @@ void Renderer::InitGLFW()
 		std::exit(-1);
 	}
 
+	InstanceExtensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+
 	uint32_t instance_extension_count = 0;
 	const char ** instance_extensions_buffer = glfwGetRequiredInstanceExtensions(&instance_extension_count);
 	for (uint32_t i = 0; i < instance_extension_count; ++i) {
 		// Push back required instance extensions as well
 		InstanceExtensions.push_back(instance_extensions_buffer[i]);
 	}
+
+	DeviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 }
 
 void Renderer::DeleteGLFW()
@@ -242,25 +256,278 @@ void Renderer::DeleteGLFW()
 
 void Renderer::GLFWCreateSurface()
 {
-	int width = 800;
-	int height = 600;
+	int width = 512;
+	int height = 512;
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);		// This tells GLFW to not create an OpenGL context with the window
-	window = glfwCreateWindow(width, height,"Learn Vulkan", nullptr, nullptr);
+	window = glfwCreateWindow(width, height, "Learn Vulkan", nullptr, nullptr);
 
 	// make sure we indeed get the surface size we want.
 	glfwGetFramebufferSize(window, &width, &height);
 
 
-	VkResult ret = glfwCreateWindowSurface(Instance, window, nullptr, &surface);
+	VkResult ret = glfwCreateWindowSurface(Instance, window, nullptr, &Surface);
 	if (VK_SUCCESS != ret) {
 		// couldn't create surface, exit
 		glfwTerminate();
 		std::exit(-1);
 	}
+
+	VkBool32 WSI_supported = false;
+	vkGetPhysicalDeviceSurfaceSupportKHR(PhysicalDevice, GraphicsFamilyIndex, Surface, &WSI_supported);
+	if (!WSI_supported) {
+		std::exit(-1);
+	}
+
+	vkGetPhysicalDeviceSurfaceCapabilitiesKHR(PhysicalDevice, Surface, &SurfaceCapabilities);
+	if (SurfaceCapabilities.currentExtent.width < UINT32_MAX) {
+		SurfaceSizeX = SurfaceCapabilities.currentExtent.width;
+		SurfaceSizeY = SurfaceCapabilities.currentExtent.height;
+	}
+
+	uint32_t format_count = 0;
+	vkGetPhysicalDeviceSurfaceFormatsKHR(PhysicalDevice, Surface, &format_count, nullptr);
+	if (format_count == 0)
+	{
+		std::exit(-1);
+	}
+	std::vector<VkSurfaceFormatKHR> formats(format_count);
+	vkGetPhysicalDeviceSurfaceFormatsKHR(PhysicalDevice, Surface, &format_count, formats.data());
+	if (formats[0].format == VK_FORMAT_UNDEFINED) {
+		SurfaceFormat.format = VK_FORMAT_B8G8R8A8_UNORM;
+		SurfaceFormat.colorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
+	}
+	else {
+		SurfaceFormat = formats[0];
+	}
 }
 
 void Renderer::GLFWDeleteSurface()
 {
-	vkDestroySurfaceKHR(Instance, surface, nullptr);
+	vkDestroySurfaceKHR(Instance, Surface, nullptr);
 	glfwDestroyWindow(window);
 }
+
+void Renderer::InitSwapchain()
+{
+	if (SwapchainImageCount < SurfaceCapabilities.minImageCount + 1)
+		SwapchainImageCount = SurfaceCapabilities.minImageCount + 1;
+	if (SurfaceCapabilities.maxImageCount > 0)
+	{
+		if (SwapchainImageCount > SurfaceCapabilities.maxImageCount)
+			SwapchainImageCount = SurfaceCapabilities.maxImageCount;
+	}
+
+	VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
+	uint32_t presentModeCount = 0;
+	vkGetPhysicalDeviceSurfacePresentModesKHR(PhysicalDevice, Surface, &presentModeCount, nullptr);
+	std::vector<VkPresentModeKHR> presentModeList(presentModeCount);
+	vkGetPhysicalDeviceSurfacePresentModesKHR(PhysicalDevice, Surface, &presentModeCount, presentModeList.data());
+	for (auto m : presentModeList) {
+		if (m == VK_PRESENT_MODE_MAILBOX_KHR) presentMode = m;
+	}
+
+	VkSwapchainCreateInfoKHR swapchain_create_info{};
+	swapchain_create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+	swapchain_create_info.surface = Surface;
+	swapchain_create_info.minImageCount = SwapchainImageCount;
+	swapchain_create_info.imageFormat = SurfaceFormat.format;
+	swapchain_create_info.imageColorSpace = SurfaceFormat.colorSpace;
+	swapchain_create_info.imageExtent.width = SurfaceSizeX;
+	swapchain_create_info.imageExtent.height = SurfaceSizeY;
+	swapchain_create_info.imageArrayLayers = 1;
+	swapchain_create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	swapchain_create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	swapchain_create_info.queueFamilyIndexCount = 0;
+	swapchain_create_info.pQueueFamilyIndices = nullptr;
+	swapchain_create_info.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+	swapchain_create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+	swapchain_create_info.presentMode = presentMode;
+	swapchain_create_info.clipped = VK_TRUE;
+	swapchain_create_info.oldSwapchain = VK_NULL_HANDLE;
+
+	auto error = vkCreateSwapchainKHR(Device, &swapchain_create_info, nullptr, &Swapchain);
+	if (error != VK_SUCCESS)
+	{
+		std::exit(-1);
+	}
+
+	error = vkGetSwapchainImagesKHR(Device, Swapchain, &SwapchainImageCount, nullptr);
+	if (error != VK_SUCCESS)
+	{
+		std::exit(-1);
+	}
+}
+
+void Renderer::DeleteSwapchain()
+{
+	vkDestroySwapchainKHR(Device, Swapchain, nullptr);
+}
+
+void Renderer::InitSwapImages()
+{
+	SwapchainImages.resize(SwapchainImageCount);
+	SwapchainImageViews.resize(SwapchainImageCount);
+
+	auto error = vkGetSwapchainImagesKHR(Device, Swapchain, &SwapchainImageCount, SwapchainImages.data());
+	if (error != VK_SUCCESS)
+	{
+		std::exit(-1);
+	}
+
+	for (uint32_t i = 0; i < SwapchainImageCount; ++i) {
+		VkImageViewCreateInfo image_view_create_info{};
+		image_view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		image_view_create_info.image = SwapchainImages[i];
+		image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		image_view_create_info.format = SurfaceFormat.format;
+		image_view_create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+		image_view_create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+		image_view_create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+		image_view_create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+		image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		image_view_create_info.subresourceRange.baseMipLevel = 0;
+		image_view_create_info.subresourceRange.levelCount = 1;
+		image_view_create_info.subresourceRange.baseArrayLayer = 0;
+		image_view_create_info.subresourceRange.layerCount = 1;
+
+		vkCreateImageView(Device, &image_view_create_info, nullptr, &SwapchainImageViews[i]);
+	}
+}
+
+void Renderer::DeleteSwapImages()
+{
+	for (auto view : SwapchainImageViews) {
+		vkDestroyImageView(Device, view, nullptr);
+	}
+}
+
+void Renderer::InitCommandPool()
+{
+	VkCommandPoolCreateInfo CmdPoolInfo = {};
+	CmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	CmdPoolInfo.pNext = NULL;
+	CmdPoolInfo.queueFamilyIndex = GraphicsFamilyIndex;
+	CmdPoolInfo.flags = 0;
+
+	auto error = vkCreateCommandPool(Device, &CmdPoolInfo, nullptr, &CommandPool);
+
+	if (error != VK_SUCCESS)
+	{
+		std::exit(-1);
+	}
+}
+
+void Renderer::DeleteCommandPool()
+{
+	vkDestroyCommandPool(Device, CommandPool, nullptr);
+}
+
+void Renderer::InitCommandBuffer()
+{
+	VkCommandBufferAllocateInfo CmdBufferInfo = {};
+	CmdBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	CmdBufferInfo.pNext = NULL;
+	CmdBufferInfo.commandPool = CommandPool;
+	CmdBufferInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	CmdBufferInfo.commandBufferCount = 1;
+
+	auto error = vkAllocateCommandBuffers(Device, &CmdBufferInfo, &CommandBuffer);
+	if (error != VK_SUCCESS)
+	{
+		std::exit(-1);
+	}
+}
+
+void Renderer::DeleteCommandBuffer()
+{
+	// Did it this way because the samples from Lunarg are like this.
+	VkCommandBuffer CmdBuf[1] = { CommandBuffer };
+	vkFreeCommandBuffers(Device, CommandPool, 1, CmdBuf);
+}
+
+void Renderer::BeginCommandBuffer()
+{
+	VkCommandBufferBeginInfo CmdBufferBeginInfo = {};
+	CmdBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	CmdBufferBeginInfo.pNext = NULL;
+	CmdBufferBeginInfo.flags = 0;
+	CmdBufferBeginInfo.pInheritanceInfo = NULL;
+
+	auto error = vkBeginCommandBuffer(CommandBuffer, &CmdBufferBeginInfo);
+
+	if (error != VK_SUCCESS)
+	{
+		std::exit(-1);
+	}
+}
+
+void Renderer::EndCommandBuffer()
+{
+	auto error = vkEndCommandBuffer(CommandBuffer);
+	if (error != VK_SUCCESS)
+		std::exit(-1);
+}
+
+void Renderer::CreateDepthBuffer()
+{
+	VkImageCreateInfo ImageInfo = {};
+	const VkFormat depth_format = VK_FORMAT_D16_UNORM;
+	VkFormatProperties FormatProperties;
+	vkGetPhysicalDeviceFormatProperties(PhysicalDevice, depth_format, &FormatProperties);
+
+	if (FormatProperties.linearTilingFeatures &VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+		ImageInfo.tiling = VK_IMAGE_TILING_LINEAR;
+	}
+	else if (FormatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+		ImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+	}
+	else {
+		/* Try other depth formats? */
+		std::cout << "VK_FORMAT_D16_UNORM Unsupported.\n";
+		exit(-1);
+	}
+
+	ImageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	ImageInfo.pNext = NULL;
+	ImageInfo.imageType = VK_IMAGE_TYPE_2D;
+	ImageInfo.format = depth_format;
+	ImageInfo.extent.width = SurfaceSizeX;
+	ImageInfo.extent.height = SurfaceSizeY;
+	ImageInfo.extent.depth = 1;
+	ImageInfo.mipLevels = 1;
+	ImageInfo.arrayLayers = 1;
+	ImageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+	ImageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	ImageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+	ImageInfo.queueFamilyIndexCount = 0;
+	ImageInfo.pQueueFamilyIndices = NULL;
+	ImageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	ImageInfo.flags = 0;
+
+	VkMemoryAllocateInfo mem_alloc = {};
+	mem_alloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	mem_alloc.pNext = NULL;
+	mem_alloc.allocationSize = 0;
+	mem_alloc.memoryTypeIndex = 0;
+
+	VkImageViewCreateInfo view_info = {};
+	view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	view_info.pNext = NULL;
+	view_info.image = VK_NULL_HANDLE;
+	view_info.format = depth_format;
+	view_info.components.r = VK_COMPONENT_SWIZZLE_R;
+	view_info.components.g = VK_COMPONENT_SWIZZLE_G;
+	view_info.components.b = VK_COMPONENT_SWIZZLE_B;
+	view_info.components.a = VK_COMPONENT_SWIZZLE_A;
+	view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+	view_info.subresourceRange.baseMipLevel = 0;
+	view_info.subresourceRange.levelCount = 1;
+	view_info.subresourceRange.baseArrayLayer = 0;
+	view_info.subresourceRange.layerCount = 1;
+	view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	view_info.flags = 0;
+	//TODO Finish DepthBuffer
+
+}
+
+
