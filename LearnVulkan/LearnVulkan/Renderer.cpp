@@ -1,27 +1,48 @@
 #include "Renderer.h"
 #include <iostream>
 #include <sstream>
+#include <glm.hpp>
 #ifdef _WIN32
 #include <Windows.h>
 #endif
 
 Renderer::Renderer()
 {
+	// Set up debug layers.
 	SetupDebug();
+	// Init GLFW for WSI help.
 	InitGLFW();
+	// Get Vulkan Instance
 	InitInstance();
+	// Init Lunarg debug layers.
 	InitDebug();
+	// Init and grab device and physical device.
 	InitDevice();
+	// Create surface.
 	GLFWCreateSurface();
+	// Create commandpool.
 	InitCommandPool();
+	// Create command buffer.
 	InitCommandBuffer();
+	// Create swapchain for swapimages.
 	InitSwapchain();
+	// Create Images to swap.
 	InitSwapImages();
+	// Begin accepting commands to the buffer.
+	BeginCommandBuffer();
+	// Create depth buffer.
+	CreateDepthBuffer();
+	// Stop allowing commands to the buffer.
+	EndCommandBuffer();
+	// Execute command buffer.
+	ExecuteQueueCommandBuffer();
+
 }
 
 
 Renderer::~Renderer()
 {
+	DeleteDepthBuffer();
 	DeleteSwapImages();
 	DeleteSwapchain();
 	DeleteCommandBuffer();
@@ -74,6 +95,8 @@ void Renderer::InitDevice()
 
 	PhysicalDevice = PhysicalDevices[0];
 
+
+
 	uint32_t PhysicalDeviceQueueFamilyCount = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties(PhysicalDevice, &PhysicalDeviceQueueFamilyCount, nullptr);
 	std::vector<VkQueueFamilyProperties> QueueFamilyPropertiesList(PhysicalDeviceQueueFamilyCount);
@@ -91,6 +114,9 @@ void Renderer::InitDevice()
 
 	if (bFoundGraphicsFamily == false)
 		std::exit(-1); // Could not find graphics family.
+
+	vkGetPhysicalDeviceMemoryProperties(PhysicalDevice, &MemoryProperties);
+	vkGetPhysicalDeviceProperties(PhysicalDevice, &DeviceProperties);
 
 	//
 	uint32_t LayerCount = 0;
@@ -203,6 +229,9 @@ void Renderer::SetupDebug()
 	InstanceExtensions.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
 }
 
+/*
+* This are pointers to extension functions.
+*/
 PFN_vkCreateDebugReportCallbackEXT fvkCreateDebugReportCallbackEXT = nullptr;
 PFN_vkDestroyDebugReportCallbackEXT fvkDestroyDebugReportCallbackEXT = nullptr;
 
@@ -237,7 +266,8 @@ void Renderer::InitGLFW()
 		std::exit(-1);
 	}
 
-	InstanceExtensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+	//GLFW adds this extension.
+	//InstanceExtensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
 
 	uint32_t instance_extension_count = 0;
 	const char ** instance_extensions_buffer = glfwGetRequiredInstanceExtensions(&instance_extension_count);
@@ -274,7 +304,8 @@ void Renderer::GLFWCreateSurface()
 
 	VkBool32 WSI_supported = false;
 	vkGetPhysicalDeviceSurfaceSupportKHR(PhysicalDevice, GraphicsFamilyIndex, Surface, &WSI_supported);
-	if (!WSI_supported) {
+	if (!WSI_supported) 
+	{ // Window System Integration not supported WHAT?!?! 
 		std::exit(-1);
 	}
 
@@ -461,13 +492,6 @@ void Renderer::BeginCommandBuffer()
 	}
 }
 
-void Renderer::EndCommandBuffer()
-{
-	auto error = vkEndCommandBuffer(CommandBuffer);
-	if (error != VK_SUCCESS)
-		std::exit(-1);
-}
-
 void Renderer::CreateDepthBuffer()
 {
 	VkImageCreateInfo ImageInfo = {};
@@ -526,8 +550,192 @@ void Renderer::CreateDepthBuffer()
 	view_info.subresourceRange.layerCount = 1;
 	view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
 	view_info.flags = 0;
-	//TODO Finish DepthBuffer
 
+
+	VkMemoryRequirements mem_reqs;
+
+	DepthFormat = depth_format;
+
+	auto error = vkCreateImage(Device, &ImageInfo, NULL, &DepthImage);
+	if (error != VK_SUCCESS)
+		std::exit(-1);
+
+	vkGetImageMemoryRequirements(Device, DepthImage, &mem_reqs);
+
+	mem_alloc.allocationSize = mem_reqs.size;
+
+	// From Lunarg samples
+	bool pass = memory_type_from_properties(mem_reqs.memoryTypeBits,
+		0, /* No Requirements */
+		&mem_alloc.memoryTypeIndex);
+
+	if (!pass)
+		std::exit(-1);
+
+	error = vkAllocateMemory(Device, &mem_alloc, nullptr, &DepthMemory);
+	if (error != VK_SUCCESS)
+		std::exit(-1);
+
+	error = vkBindImageMemory(Device, DepthImage, DepthMemory, 0);
+	if (error != VK_SUCCESS)
+		std::exit(-1);
+
+	set_image_layout(DepthImage, VK_IMAGE_ASPECT_DEPTH_BIT,
+		VK_IMAGE_LAYOUT_UNDEFINED,
+		VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
+	view_info.image = DepthImage;
+	error = vkCreateImageView(Device, &view_info, NULL, &DepthImageView);
+	if (error != VK_SUCCESS)
+		std::exit(-1);
+	//TODO Finish DepthBuffer
 }
 
+void Renderer::DeleteDepthBuffer()
+{
+	vkDestroyImageView(Device, DepthImageView, NULL);
+	vkDestroyImage(Device, DepthImage, NULL);
+	vkFreeMemory(Device, DepthMemory, NULL);
+}
 
+// From Lunarg samples.
+bool Renderer::memory_type_from_properties(uint32_t typeBits,
+	VkFlags requirements_mask,
+	uint32_t *typeIndex)
+{
+	// Search memtypes to find first index with those properties
+	for (uint32_t i = 0; i < MemoryProperties.memoryTypeCount; i++) {
+		if ((typeBits & 1) == 1) {
+			// Type is available, does it match user properties?
+			if ((MemoryProperties.memoryTypes[i].propertyFlags &
+				requirements_mask) == requirements_mask) {
+				*typeIndex = i;
+				return true;
+			}
+		}
+		typeBits >>= 1;
+	}
+	// No memory types matched, return failure
+	return false;
+}
+
+// Thank you lunarg.
+void Renderer::set_image_layout(VkImage image,
+	VkImageAspectFlags aspectMask,
+	VkImageLayout old_image_layout,
+	VkImageLayout new_image_layout) {
+	/* DEPENDS on info.cmd and info.queue initialized */
+
+	VkImageMemoryBarrier image_memory_barrier = {};
+	image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	image_memory_barrier.pNext = NULL;
+	image_memory_barrier.srcAccessMask = 0;
+	image_memory_barrier.dstAccessMask = 0;
+	image_memory_barrier.oldLayout = old_image_layout;
+	image_memory_barrier.newLayout = new_image_layout;
+	image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	image_memory_barrier.image = image;
+	image_memory_barrier.subresourceRange.aspectMask = aspectMask;
+	image_memory_barrier.subresourceRange.baseMipLevel = 0;
+	image_memory_barrier.subresourceRange.levelCount = 1;
+	image_memory_barrier.subresourceRange.baseArrayLayer = 0;
+	image_memory_barrier.subresourceRange.layerCount = 1;
+
+	if (old_image_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
+		image_memory_barrier.srcAccessMask =
+			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	}
+
+	if (new_image_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+		image_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	}
+
+	if (new_image_layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
+		image_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+	}
+
+	if (old_image_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+		image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	}
+
+	if (old_image_layout == VK_IMAGE_LAYOUT_PREINITIALIZED) {
+		image_memory_barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+	}
+
+	if (new_image_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+		image_memory_barrier.srcAccessMask =
+			VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+		image_memory_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	}
+
+	if (new_image_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
+		image_memory_barrier.dstAccessMask =
+			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	}
+
+	if (new_image_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+		image_memory_barrier.dstAccessMask =
+			VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+	}
+
+	VkPipelineStageFlags src_stages = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+	VkPipelineStageFlags dest_stages = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+
+
+	vkCmdPipelineBarrier(CommandBuffer, src_stages, dest_stages, 0, 0, NULL, 0, NULL,
+		1, &image_memory_barrier);
+}
+
+void Renderer::EndCommandBuffer()
+{
+	auto res = vkEndCommandBuffer(CommandBuffer);
+	if (res != VK_SUCCESS)
+		std::exit(-1);
+}
+
+/*
+* TODO Split into different functions.
+*/
+void Renderer::ExecuteQueueCommandBuffer()
+{
+
+	/* Queue the command buffer for execution */
+	const VkCommandBuffer cmd_bufs[] = { CommandBuffer };
+	VkFenceCreateInfo fenceInfo;
+	VkFence drawFence;
+	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fenceInfo.pNext = NULL;
+	fenceInfo.flags = 0;
+	vkCreateFence(Device, &fenceInfo, NULL, &drawFence);
+
+	VkPipelineStageFlags pipe_stage_flags = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+	VkSubmitInfo submit_info[1] = {};
+	submit_info[0].pNext = NULL;
+	submit_info[0].sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit_info[0].waitSemaphoreCount = 0;
+	submit_info[0].pWaitSemaphores = NULL;
+	submit_info[0].pWaitDstStageMask = &pipe_stage_flags;
+	submit_info[0].commandBufferCount = 1;
+	submit_info[0].pCommandBuffers = cmd_bufs;
+	submit_info[0].signalSemaphoreCount = 0;
+	submit_info[0].pSignalSemaphores = NULL;
+
+	auto error = vkQueueSubmit(Queue, 1, submit_info, drawFence);
+	if (error != VK_SUCCESS)
+		std::exit(-1);
+
+	VkResult result;
+	do
+	{
+		result = vkWaitForFences(Device, 1, &drawFence, VK_TRUE, UINT64_MAX);
+	} while (result == VK_TIMEOUT);
+
+
+	vkDestroyFence(Device, drawFence, NULL);
+}
+
+void Renderer::InitUniformBuffer()
+{
+	//TODO This function.
+}

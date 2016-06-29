@@ -23,10 +23,10 @@ public:
 
 	void InitGLFW();
 	void DeleteGLFW();
-	
+
 	void GLFWCreateSurface();
 	void GLFWDeleteSurface();
-	
+
 	void InitSwapchain();
 	void DeleteSwapchain();
 
@@ -42,6 +42,16 @@ public:
 	void EndCommandBuffer();
 
 	void CreateDepthBuffer();
+	void DeleteDepthBuffer();
+	void ExecuteQueueCommandBuffer();
+
+	void InitUniformBuffer();
+
+	bool memory_type_from_properties(uint32_t typeBits, VkFlags requirements_mask, uint32_t *typeIndex);
+	void set_image_layout(VkImage image, VkImageAspectFlags aspectMask, VkImageLayout old_image_layout, VkImageLayout new_image_layout);
+
+	VkPhysicalDeviceMemoryProperties MemoryProperties;
+	VkPhysicalDeviceProperties DeviceProperties;
 
 	// VkInstance is where everything in Vulkan happens.
 	VkInstance Instance = nullptr;
@@ -77,6 +87,12 @@ public:
 
 	//
 	VkCommandBuffer CommandBuffer = nullptr;
+
+	//Depth Buffer
+	VkFormat DepthFormat;
+	VkImage DepthImage;
+	VkDeviceMemory DepthMemory;
+	VkImageView DepthImageView;
 
 	std::vector<const char*> InstanceLayers;
 	std::vector<const char*> InstanceExtensions;
