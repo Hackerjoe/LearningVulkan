@@ -44,6 +44,7 @@ public:
 	void DeleteCommandBuffer();
 	void BeginCommandBuffer();
 	void EndCommandBuffer();
+	void ResetCommandBuffer();
 
 	void CreateDepthBuffer();
 	void DeleteDepthBuffer();
@@ -79,6 +80,12 @@ public:
 	void DeleteGraphcisPipeline();
 
 	void DrawCube();
+
+	void CreateFence();
+	void DeleteFence();
+
+	void InitSemaphore();
+	void DeleteSemaphore();
 	/*
 	Functions from lunarg samples.
 	*/
@@ -106,8 +113,8 @@ public:
 
 	VkSurfaceFormatKHR SurfaceFormat = {};
 
-	uint32_t SurfaceSizeX = 512;
-	uint32_t SurfaceSizeY = 512;
+	int SurfaceSizeX = 1920;
+	int SurfaceSizeY = 1080;
 
 	VkSwapchainKHR Swapchain = nullptr;
 	uint32_t SwapchainImageCount = 2;
@@ -168,6 +175,11 @@ public:
 	VkPipeline GraphicsPipeline = nullptr;
 
 	uint32_t CurrentBuffer;
+
+	//
+	VkSemaphore presentCompleteSemaphore;
+	//
+	VkFence drawFence;
 
 	std::vector<const char*> InstanceLayers;
 	std::vector<const char*> InstanceExtensions;

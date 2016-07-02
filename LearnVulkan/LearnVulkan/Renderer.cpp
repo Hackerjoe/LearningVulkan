@@ -43,14 +43,17 @@ static const char *fragShaderText =
 
 Renderer::Renderer()
 {
+
+	SurfaceSizeX = 1920;
+	SurfaceSizeY = 1080;
 	// Set up debug layers.
-	SetupDebug();
+	//SetupDebug();
 	// Init GLFW for WSI help.
 	InitGLFW();
 	// Get Vulkan Instance
 	InitInstance();
 	// Init Lunarg debug layers.
-	InitDebug();
+	//InitDebug();
 	// Init and grab device and physical device.
 	InitDevice();
 	// Create surface.
@@ -82,8 +85,14 @@ Renderer::Renderer()
 	InitDescriptorSet(false);
 	InitPipelineCache();
 	InitGraphicsPipeline(true, true);
-	EndCommandBuffer();
-	ExecuteQueueCommandBuffer();
+	InitSemaphore();
+	CreateFence();
+	while (true)
+	{
+		DrawCube();
+		ResetCommandBuffer();
+		BeginCommandBuffer();
+	}
 }
 
 
@@ -185,7 +194,7 @@ void Renderer::InitDevice()
 		std::cout << "\t" << i.layerName << " || " << i.description << "  " << std::endl;
 	}
 	std::cout << "[END]" << std::endl;
-
+	
 	float QueuePriorities[] = { 1.0f };
 	VkDeviceQueueCreateInfo DeviceQueueCreateInfo{};
 	DeviceQueueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -342,13 +351,11 @@ void Renderer::DeleteGLFW()
 
 void Renderer::GLFWCreateSurface()
 {
-	int width = 512;
-	int height = 512;
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);		// This tells GLFW to not create an OpenGL context with the window
-	window = glfwCreateWindow(width, height, "Learn Vulkan", nullptr, nullptr);
+	window = glfwCreateWindow(SurfaceSizeX, SurfaceSizeY, "Learn Vulkan", nullptr, nullptr);
 
 	// make sure we indeed get the surface size we want.
-	glfwGetFramebufferSize(window, &width, &height);
+	glfwGetFramebufferSize(window, &SurfaceSizeX, &SurfaceSizeY);
 
 
 	VkResult ret = glfwCreateWindowSurface(Instance, window, nullptr, &Surface);
@@ -493,7 +500,7 @@ void Renderer::InitCommandPool()
 	CmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	CmdPoolInfo.pNext = NULL;
 	CmdPoolInfo.queueFamilyIndex = GraphicsFamilyIndex;
-	CmdPoolInfo.flags = 0;
+	CmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
 	auto error = vkCreateCommandPool(Device, &CmdPoolInfo, nullptr, &CommandPool);
 
@@ -748,6 +755,11 @@ void Renderer::EndCommandBuffer()
 		std::exit(-1);
 }
 
+void Renderer::ResetCommandBuffer()
+{
+	vkResetCommandBuffer(CommandBuffer, 0);
+}
+
 /*
 * TODO Split into different functions.
 */
@@ -784,28 +796,28 @@ void Renderer::ExecuteQueueCommandBuffer()
 	{
 		result = vkWaitForFences(Device, 1, &drawFence, VK_TRUE, UINT64_MAX);
 	} while (result == VK_TIMEOUT);
-
-
-	vkDestroyFence(Device, drawFence, NULL);
+	
+	
+	//vkDestroyFence(Device, drawFence, NULL);
 }
 
 void Renderer::InitUniformBuffer()
 {
 
-	glm::mat4 Projection = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, 100.0f);
+	glm::mat4 Projection = glm::perspective(glm::radians(45.0f), (float)SurfaceSizeY / (float)SurfaceSizeX, 0.1f, 100.0f);
 	glm::mat4 View = glm::lookAt(
-		glm::vec3(0, 3, 10), // Camera is at (0,3,10), in World Space
+		glm::vec3(0, 20, 4), // Camera is at (0,3,10), in World Space
 		glm::vec3(0, 0, 0),  // and looks at the origin
-		glm::vec3(0, -1, 0)  // Head is up (set to 0,-1,0 to look upside-down)
+		glm::vec3(0, 1, 0)  // Head is up (set to 0,-1,0 to look upside-down)
 	);
-	glm::mat4 Model = glm::mat4(1.0f);
-	// Vulkan clip space has inverted Y and half Z.
-	glm::mat4 Clip = glm::mat4(1.0f, 0.0f, 0.0f, 0.0f,
+	glm::mat4 Model = glm::mat4
+	(1.0f, 0.0f, 0.0f, 0.0f,
 		0.0f, -1.0f, 0.0f, 0.0f,
-		0.0f, 0.0f, 0.5f, 0.0f,
-		0.0f, 0.0f, 0.5f, 1.0f);
+		0.0f, 0.0f, 1.0f, 0.0f,
+		0.0f, 0.0f, 0.0f, 1.0f);
+	Model = glm::translate(Model, glm::vec3(0, 5, 0));
 
-	glm::mat4 MVP = Clip * Projection * View * Model;
+	glm::mat4 MVP = Projection * View * Model;
 
 	VkBufferCreateInfo buf_info = {};
 	buf_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -1559,19 +1571,10 @@ void Renderer::DrawCube()
 	clear_values[1].depthStencil.depth = 1.0f;
 	clear_values[1].depthStencil.stencil = 0;
 
-	VkSemaphore presentCompleteSemaphore;
-	VkSemaphoreCreateInfo presentCompleteSemaphoreCreateInfo;
-	presentCompleteSemaphoreCreateInfo.sType =
-		VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-	presentCompleteSemaphoreCreateInfo.pNext = NULL;
-	presentCompleteSemaphoreCreateInfo.flags = 0;
-
-	auto res = vkCreateSemaphore(Device, &presentCompleteSemaphoreCreateInfo,
-		NULL, &presentCompleteSemaphore);
-	assert(res == VK_SUCCESS);
+	
 
 	// Get the index of the next available swapchain image:
-	res = vkAcquireNextImageKHR(Device, Swapchain, UINT64_MAX,
+	auto res = vkAcquireNextImageKHR(Device, Swapchain, UINT64_MAX,
 		presentCompleteSemaphore, VK_NULL_HANDLE,
 		&CurrentBuffer);
 
@@ -1600,5 +1603,114 @@ void Renderer::DrawCube()
 
 	const VkDeviceSize offsets[1] = { 0 };
 	vkCmdBindVertexBuffers(CommandBuffer, 0, 1, &VertexBuffer, offsets);
-	//TODO Draw Cube!
+
+	VkViewport Viewport;
+	Viewport.height = (float)SurfaceSizeX;
+	Viewport.width = (float)SurfaceSizeY;
+	Viewport.minDepth = (float)0.0f;
+	Viewport.maxDepth = (float)1.0f;
+	Viewport.x = 0;
+	Viewport.y = 0;
+	vkCmdSetViewport(CommandBuffer, 0, 1, &Viewport);
+
+	VkRect2D Scissor;
+	Scissor.extent.width = SurfaceSizeX;
+	Scissor.extent.height = SurfaceSizeY;
+	Scissor.offset.x = 0;
+	Scissor.offset.y = 0;
+	vkCmdSetScissor(CommandBuffer, 0, 1, &Scissor);
+
+	vkCmdDraw(CommandBuffer, 12 * 3, 1, 0, 0);
+
+	vkCmdEndRenderPass(CommandBuffer);
+
+	VkImageMemoryBarrier prePresentBarrier = {};
+	prePresentBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	prePresentBarrier.pNext = NULL;
+	prePresentBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	prePresentBarrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+	prePresentBarrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	prePresentBarrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	prePresentBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	prePresentBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	prePresentBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	prePresentBarrier.subresourceRange.baseMipLevel = 0;
+	prePresentBarrier.subresourceRange.levelCount = 1;
+	prePresentBarrier.subresourceRange.baseArrayLayer = 0;
+	prePresentBarrier.subresourceRange.layerCount = 1;
+	prePresentBarrier.image = SwapchainImages[CurrentBuffer];
+
+	vkCmdPipelineBarrier(CommandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+		VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, NULL, 0,
+		NULL, 1, &prePresentBarrier);
+
+	res = vkEndCommandBuffer(CommandBuffer);
+
+	if (res != VK_SUCCESS)
+		std::exit(-1);
+
+	const VkCommandBuffer cmd_bufs[] = { CommandBuffer };
+
+	VkPipelineStageFlags pipe_stage_flags =
+		VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+	VkSubmitInfo submit_info[1] = {};
+	submit_info[0].pNext = NULL;
+	submit_info[0].sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit_info[0].waitSemaphoreCount = 1;
+	submit_info[0].pWaitSemaphores = &presentCompleteSemaphore;
+	submit_info[0].pWaitDstStageMask = &pipe_stage_flags;
+	submit_info[0].commandBufferCount = 1;
+	submit_info[0].pCommandBuffers = cmd_bufs;
+	submit_info[0].signalSemaphoreCount = 0;
+	submit_info[0].pSignalSemaphores = NULL;
+
+	res = vkQueueSubmit(Queue, 1, submit_info, drawFence);
+	if (res != VK_SUCCESS)
+		std::exit(-1);
+
+	VkPresentInfoKHR present;
+	present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	present.pNext = NULL;
+	present.swapchainCount = 1;
+	present.pSwapchains = &Swapchain;
+	present.pImageIndices = &CurrentBuffer;
+	present.pWaitSemaphores = NULL;
+	present.waitSemaphoreCount = 0;
+	present.pResults = NULL;
+
+	do {
+		res = vkWaitForFences(Device, 1, &drawFence, VK_TRUE, UINT32_MAX);
+	} while (res == VK_TIMEOUT);
+
+	res = vkQueuePresentKHR(Queue, &present);
+
+
+	//Sleep(10 * 1000);
+	vkResetFences(Device, 1, &drawFence);
+
+	//(Device, presentCompleteSemaphore, NULL);
+	//vkDestroyFence(Device, drawFence, NULL);
+}
+
+void Renderer::CreateFence()
+{
+	VkFenceCreateInfo fenceInfo;
+
+	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fenceInfo.pNext = NULL;
+	fenceInfo.flags = 0;
+	vkCreateFence(Device, &fenceInfo, NULL, &drawFence);
+}
+
+void Renderer::InitSemaphore()
+{
+	VkSemaphoreCreateInfo presentCompleteSemaphoreCreateInfo;
+	presentCompleteSemaphoreCreateInfo.sType =
+		VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+	presentCompleteSemaphoreCreateInfo.pNext = NULL;
+	presentCompleteSemaphoreCreateInfo.flags = 0;
+
+	auto res = vkCreateSemaphore(Device, &presentCompleteSemaphoreCreateInfo,
+		NULL, &presentCompleteSemaphore);
+	assert(res == VK_SUCCESS);
 }
