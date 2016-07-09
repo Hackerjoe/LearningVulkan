@@ -85,13 +85,13 @@ Renderer::Renderer()
 	InitDescriptorSet(false);
 	InitPipelineCache();
 	InitGraphicsPipeline(true, true);
-	InitSemaphore();
-	CreateFence();
+	//ExecuteQueueCommandBuffer();
+	//InitSemaphore();
+	//CreateFence();
+	FlushCommandBuffer();
 	while (true)
 	{
 		DrawCube();
-		ResetCommandBuffer();
-		BeginCommandBuffer();
 	}
 }
 
@@ -758,6 +758,12 @@ void Renderer::EndCommandBuffer()
 void Renderer::ResetCommandBuffer()
 {
 	vkResetCommandBuffer(CommandBuffer, 0);
+}
+
+void Renderer::FlushCommandBuffer()
+{
+	EndCommandBuffer();
+	ExecuteQueueCommandBuffer();
 }
 
 /*
@@ -1563,6 +1569,10 @@ void Renderer::init_resources(TBuiltInResource &Resources)
 
 void Renderer::DrawCube()
 {
+	vkDeviceWaitIdle(Device);
+
+	InitSemaphore();
+
 	VkClearValue clear_values[2];
 	clear_values[0].color.float32[0] = 0.2f;
 	clear_values[0].color.float32[1] = 0.2f;
@@ -1572,11 +1582,12 @@ void Renderer::DrawCube()
 	clear_values[1].depthStencil.stencil = 0;
 
 	
-
 	// Get the index of the next available swapchain image:
 	auto res = vkAcquireNextImageKHR(Device, Swapchain, UINT64_MAX,
 		presentCompleteSemaphore, VK_NULL_HANDLE,
 		&CurrentBuffer);
+
+	BeginCommandBuffer();
 
 	set_image_layout(SwapchainImages[CurrentBuffer],
 		VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
@@ -1593,6 +1604,7 @@ void Renderer::DrawCube()
 	rp_begin.renderArea.extent.height = SurfaceSizeY;
 	rp_begin.clearValueCount = 2;
 	rp_begin.pClearValues = clear_values;
+
 
 	vkCmdBeginRenderPass(CommandBuffer, &rp_begin, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -1664,9 +1676,10 @@ void Renderer::DrawCube()
 	submit_info[0].signalSemaphoreCount = 0;
 	submit_info[0].pSignalSemaphores = NULL;
 
-	res = vkQueueSubmit(Queue, 1, submit_info, drawFence);
+	res = vkQueueSubmit(Queue, 1, submit_info, nullptr);
 	if (res != VK_SUCCESS)
 		std::exit(-1);
+	vkQueueWaitIdle(Queue);
 
 	VkPresentInfoKHR present;
 	present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -1678,18 +1691,13 @@ void Renderer::DrawCube()
 	present.waitSemaphoreCount = 0;
 	present.pResults = NULL;
 
-	do {
-		res = vkWaitForFences(Device, 1, &drawFence, VK_TRUE, UINT32_MAX);
-	} while (res == VK_TIMEOUT);
+	//vkQueueWaitIdle(Queue);
 
 	res = vkQueuePresentKHR(Queue, &present);
 
+	DeleteSemaphore();
 
-	//Sleep(10 * 1000);
-	vkResetFences(Device, 1, &drawFence);
-
-	//(Device, presentCompleteSemaphore, NULL);
-	//vkDestroyFence(Device, drawFence, NULL);
+	glfwPollEvents();
 }
 
 void Renderer::CreateFence()
@@ -1713,4 +1721,9 @@ void Renderer::InitSemaphore()
 	auto res = vkCreateSemaphore(Device, &presentCompleteSemaphoreCreateInfo,
 		NULL, &presentCompleteSemaphore);
 	assert(res == VK_SUCCESS);
+}
+
+void Renderer::DeleteSemaphore()
+{
+	vkDestroySemaphore(Device, presentCompleteSemaphore, NULL);
 }

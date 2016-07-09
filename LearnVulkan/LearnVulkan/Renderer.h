@@ -45,6 +45,7 @@ public:
 	void BeginCommandBuffer();
 	void EndCommandBuffer();
 	void ResetCommandBuffer();
+	void FlushCommandBuffer();
 
 	void CreateDepthBuffer();
 	void DeleteDepthBuffer();
