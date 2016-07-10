@@ -81,17 +81,24 @@ Renderer::Renderer()
 	InitVertexBuffer(g_vb_solid_face_colors_Data,
 		sizeof(g_vb_solid_face_colors_Data),
 		sizeof(g_vb_solid_face_colors_Data[0]), false);
+	uint32_t size = sizeof(Vertex);
 	InitDescriptorPool(false);
 	InitDescriptorSet(false);
 	InitPipelineCache();
 	InitGraphicsPipeline(true, true);
 	//ExecuteQueueCommandBuffer();
 	//InitSemaphore();
-	//CreateFence();
+
 	FlushCommandBuffer();
+
+	CreateFence();
+	NBFrames = 0;
+	LastTime = glfwGetTime();
 	while (true)
 	{
 		DrawCube();
+		CalcMS();
+		
 	}
 }
 
@@ -161,7 +168,6 @@ void Renderer::InitDevice()
 	PhysicalDevice = PhysicalDevices[0];
 
 
-
 	uint32_t PhysicalDeviceQueueFamilyCount = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties(PhysicalDevice, &PhysicalDeviceQueueFamilyCount, nullptr);
 	std::vector<VkQueueFamilyProperties> QueueFamilyPropertiesList(PhysicalDeviceQueueFamilyCount);
@@ -182,6 +188,13 @@ void Renderer::InitDevice()
 
 	vkGetPhysicalDeviceMemoryProperties(PhysicalDevice, &MemoryProperties);
 	vkGetPhysicalDeviceProperties(PhysicalDevice, &DeviceProperties);
+	/*
+	VkPhysicalDeviceFeatures Features;
+	vkGetPhysicalDeviceFeatures(PhysicalDevice, &Features);
+
+	VkPhysicalDeviceProperties DeviceProps;
+	vkGetPhysicalDeviceProperties(PhysicalDevice, &DeviceProps);
+	*/
 
 	//
 	uint32_t LayerCount = 0;
@@ -1149,7 +1162,7 @@ void Renderer::InitVertexBuffer(const void * vertexData, uint32_t dataSize, uint
 	res = vkMapMemory(Device, VertexBufferMemory, 0, mem_reqs.size, 0, (void **)&pData);
 	if (res != VK_SUCCESS)
 		std::exit(-1);
-
+	
 	memcpy(pData, vertexData, dataSize);
 
 	vkUnmapMemory(Device, VertexBufferMemory);
@@ -1573,6 +1586,7 @@ void Renderer::DrawCube()
 
 	InitSemaphore();
 
+
 	VkClearValue clear_values[2];
 	clear_values[0].color.float32[0] = 0.2f;
 	clear_values[0].color.float32[1] = 0.2f;
@@ -1676,10 +1690,17 @@ void Renderer::DrawCube()
 	submit_info[0].signalSemaphoreCount = 0;
 	submit_info[0].pSignalSemaphores = NULL;
 
-	res = vkQueueSubmit(Queue, 1, submit_info, nullptr);
+	res = vkQueueSubmit(Queue, 1, submit_info, drawFence);
 	if (res != VK_SUCCESS)
 		std::exit(-1);
-	vkQueueWaitIdle(Queue);
+
+	//vkQueueWaitIdle(Queue);
+	VkResult result;
+	do
+	{
+		result = vkWaitForFences(Device, 1, &drawFence, VK_TRUE, UINT64_MAX);
+	} while (result == VK_TIMEOUT);
+
 
 	VkPresentInfoKHR present;
 	present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -1691,12 +1712,12 @@ void Renderer::DrawCube()
 	present.waitSemaphoreCount = 0;
 	present.pResults = NULL;
 
-	//vkQueueWaitIdle(Queue);
 
 	res = vkQueuePresentKHR(Queue, &present);
 
+	vkResetFences(Device, 1, &drawFence);
 	DeleteSemaphore();
-
+	
 	glfwPollEvents();
 }
 
@@ -1726,4 +1747,16 @@ void Renderer::InitSemaphore()
 void Renderer::DeleteSemaphore()
 {
 	vkDestroySemaphore(Device, presentCompleteSemaphore, NULL);
+}
+
+void Renderer::CalcMS()
+{
+	CurrentTime = glfwGetTime();
+	NBFrames++;
+	if (CurrentTime - LastTime >= 1.0) {
+		printf("%f ms/frame FPS: %d\n",1000/ double(NBFrames),NBFrames);
+
+		NBFrames = 0;
+		LastTime += 1.0;
+	}
 }
