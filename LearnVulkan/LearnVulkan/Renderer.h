@@ -87,11 +87,6 @@ public:
 
 	void InitSemaphore();
 	void DeleteSemaphore();
-
-	double CurrentTime;
-	int NBFrames;
-	double LastTime;
-	void CalcMS();
 	/*
 	Functions from lunarg samples.
 	*/
